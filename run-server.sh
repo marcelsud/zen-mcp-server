@@ -829,7 +829,15 @@ check_claude_cli_integration() {
     local python_cmd="$1"
     local server_path="$2"
     
-    if ! command -v claude &> /dev/null; then
+    # Check for claude in standard PATH and common installation paths
+    local claude_cmd=""
+    if command -v claude &> /dev/null; then
+        claude_cmd="claude"
+    elif [[ -x "$HOME/.claude/local/claude" ]]; then
+        claude_cmd="$HOME/.claude/local/claude"
+    fi
+    
+    if [[ -z "$claude_cmd" ]]; then
         echo ""
         print_warning "Claude CLI not found"
         echo ""
@@ -849,22 +857,22 @@ check_claude_cli_integration() {
     fi
     
     # Check if zen is registered
-    local mcp_list=$(claude mcp list 2>/dev/null)
+    local mcp_list=$($claude_cmd mcp list 2>/dev/null)
     if echo "$mcp_list" | grep -q "zen"; then
         # Check if it's using the old Docker command
         if echo "$mcp_list" | grep -E "zen.*docker|zen.*compose" &>/dev/null; then
             print_warning "Found old Docker-based Zen registration, updating..."
-            claude mcp remove zen -s user 2>/dev/null || true
+            $claude_cmd mcp remove zen -s user 2>/dev/null || true
             
             # Re-add with correct Python command
-            if claude mcp add zen -s user -- "$python_cmd" "$server_path" 2>/dev/null; then
+            if $claude_cmd mcp add zen -s user -- "$python_cmd" "$server_path" 2>/dev/null; then
                 print_success "Updated Zen to become a standalone script"
                 return 0
             else
                 echo ""
                 echo "Failed to update MCP registration. Please run manually:"
-                echo "  claude mcp remove zen -s user"
-                echo "  claude mcp add zen -s user -- $python_cmd $server_path"
+                echo "  $claude_cmd mcp remove zen -s user"
+                echo "  $claude_cmd mcp add zen -s user -- $python_cmd $server_path"
                 return 1
             fi
         else
@@ -874,16 +882,16 @@ check_claude_cli_integration() {
                 return 0
             else
                 print_warning "Zen registered with different path, updating..."
-                claude mcp remove zen -s user 2>/dev/null || true
+                $claude_cmd mcp remove zen -s user 2>/dev/null || true
                 
-                if claude mcp add zen -s user -- "$python_cmd" "$server_path" 2>/dev/null; then
+                if $claude_cmd mcp add zen -s user -- "$python_cmd" "$server_path" 2>/dev/null; then
                     print_success "Updated Zen with current path"
                     return 0
                 else
                     echo ""
                     echo "Failed to update MCP registration. Please run manually:"
-                    echo "  claude mcp remove zen -s user"
-                    echo "  claude mcp add zen -s user -- $python_cmd $server_path"
+                    echo "  $claude_cmd mcp remove zen -s user"
+                    echo "  $claude_cmd mcp add zen -s user -- $python_cmd $server_path"
                     return 1
                 fi
             fi
@@ -895,18 +903,18 @@ check_claude_cli_integration() {
         echo ""
         if [[ $REPLY =~ ^[Nn]$ ]]; then
             print_info "To add manually later, run:"
-            echo "  claude mcp add zen -s user -- $python_cmd $server_path"
+            echo "  $claude_cmd mcp add zen -s user -- $python_cmd $server_path"
             return 0
         fi
         
         print_info "Registering Zen with Claude Code..."
-        if claude mcp add zen -s user -- "$python_cmd" "$server_path" 2>/dev/null; then
+        if $claude_cmd mcp add zen -s user -- "$python_cmd" "$server_path" 2>/dev/null; then
             print_success "Successfully added Zen to Claude Code"
             return 0
         else
             echo ""
             echo "Failed to add automatically. To add manually, run:"
-            echo "  claude mcp add zen -s user -- $python_cmd $server_path"
+            echo "  $claude_cmd mcp add zen -s user -- $python_cmd $server_path"
             return 1
         fi
     fi
@@ -1041,6 +1049,7 @@ EOF
 display_config_instructions() {
     local python_cmd="$1"
     local server_path="$2"
+    local claude_cmd="${3:-claude}"
     
     echo ""
     local config_header="ZEN MCP SERVER CONFIGURATION"
@@ -1051,7 +1060,7 @@ display_config_instructions() {
     echo ""
     
     print_info "1. For Claude Code (CLI):"
-    echo -e "   ${GREEN}claude mcp add zen -s user -- $python_cmd $server_path${NC}"
+    echo -e "   ${GREEN}$claude_cmd mcp add zen -s user -- $python_cmd $server_path${NC}"
     echo ""
     
     print_info "2. For Claude Desktop:"
@@ -1172,7 +1181,18 @@ main() {
             python_cmd="$new_python_cmd"
             local script_dir=$(get_script_dir)
             local server_path="$script_dir/server.py"
-            display_config_instructions "$python_cmd" "$server_path"
+            
+            # Check for claude in standard PATH and common installation paths
+            local claude_cmd=""
+            if command -v claude &> /dev/null; then
+                claude_cmd="claude"
+            elif [[ -x "$HOME/.claude/local/claude" ]]; then
+                claude_cmd="$HOME/.claude/local/claude"
+            else
+                claude_cmd="claude"  # Default to claude if not found
+            fi
+            
+            display_config_instructions "$python_cmd" "$server_path" "$claude_cmd"
             exit 0
             ;;
         -f|--follow)
